@@ -11,6 +11,14 @@
 #define CWND_THRESHOLD 2
 #define TIMEOUT 3
 
+/***************************
+*TBD: 
+*agent handshaking
+*congestion control
+*flow control
+*mprecv
+****************************/
+
 struct sockaddr_in myAddress, destAddress;
 struct sockaddr_in *agentAddress;
 int agentNum;
@@ -20,11 +28,26 @@ struct tcp_packet
 	unsigned char dest_address[4];
 	int port;
 	int seg_num; //also ack_num if ack is set
+	int len; //data length
 	int rwnd;
 	int flag; //0: none, 1:ack, 2:syn, 3 ack/syn, 4: fin
-	int len; //data length
 	unsigned char data[1000];
 };
+
+unsigned char *deserialize_int(unsigned char *ptr, int *value)
+{
+	*value =  (ptr[0]<<24) | (ptr[1]<<16) | (ptr[2]<<8) | ptr[3];
+	return ptr+4;
+}
+
+unsigned char *serialize_int(unsigned char *ptr, int value)
+{
+	ptr[0] = value>>24;
+	ptr[1] = value>>16;
+	ptr[2] = value>>8;
+	ptr[3] = value;
+	return ptr+4;
+}
 
 unsigned char *serialize_tcp_packet(unsigned char *buffer, struct tcp_packet tp)
 {
@@ -40,6 +63,25 @@ unsigned char *serialize_tcp_packet(unsigned char *buffer, struct tcp_packet tp)
 	ptr = serialize_int(ptr, tp.len);
 	ptr = serialize_int(ptr, tp.rwnd);
 	ptr = serialize_int(ptr, tp.flag);
+	memcpy(ptr, tp.data, 1000);
+	return buffer;
+}
+
+unsigned char *deserialize_tcp_packet(unsigned char *buffer, struct tcp_packet *tp)
+{
+	unsigned char *ptr = buffer;
+	tp->dest_address[0] = ptr[0];
+	tp->dest_address[1] = ptr[1];
+	tp->dest_address[2] = ptr[2];
+	tp->dest_address[3] = ptr[3];
+	ptr += 4;
+
+	ptr = deserialize_int(ptr, &(tp->port))
+	ptr = deserialize_int(ptr, &(tp->seq_num))
+	ptr = deserialize_int(ptr, &(tp->len))
+	ptr = deserialize_int(ptr, &(tp->rwnd))
+	ptr = deserialize_int(ptr, &(tp->flag))
+	return buffer;
 }
 
 int mpsocket(int port)
@@ -63,19 +105,18 @@ int mpsend(int connfd, int fd, string recv_address, int port)
 	struct tcp_packet fb;
 
 	unsigned char buffer[1024];
-	unsigned char data[1000];
 	memset(buffer, 0, 1024);
-	memset(data, 0, 1000);
 	int len, send_base = 1, next_seq_num = 1;
-	int cwnd = 1, i;
+	int cwnd = 1, i, eof = 0;
 
-	while()
+	while(!eof)
 	{
 		dg = (struct tcp_packet *)calloc(cwnd, sizeof(struct tcp_packet));
 		/*read from file and send data*/
 		for(i = 0;i<cwnd, i++)
 		{
-			if((len = read(fd, data, 1000)) > 0)
+			memset(dg[i].data, 0, 1000)
+			if((len = read(fd, dg[i].data, 1000)) > 0)
 			{
 				memcpy(dg[i].dest_address, gethostbyname(recv_adress)->h_addr_list[0], 4);
 				dg[i].port = port;
@@ -83,28 +124,71 @@ int mpsend(int connfd, int fd, string recv_address, int port)
 				dg[i].flag = 0;
 				dg[i].rwnd = 0;
 				dg[i].len = len;
-				memset(dg[i].data, 0, 1000);
-				memcpy(dg[i].data, data, 1000);
-				memset(data, 0, 1000);
 				memset(buffer, 0, 1024);
-				sendto(connfd, &dg[i], 1024, 0, agentAddress[0]);
+				serialize_tcp_packet(buffer, dg[i]);
+				sendto(connfd, buffer, 1024, 0, agentAddress[0]);
 				next_seq_num += len;
 				if(i == 0)
 				{
 					alarm(TIMEOUT);
 				}
 			}
-			else if(len == 0)break;
-			else printf("wrong\n");
+			else if(len == 0)
+			{
+				eof = 1;
+				break;
+			}
+			else 
+			{
+				printf("read file wrong\n");
+				eof = 1;
+
+				return 0;;
+			}
 		}
 		/*wait for acks*/
-		while()
+		while(send_base < next_seq_num)
 		{
 			memset(fb.data, 0, 1000);
-			if(recvfrom(connfd, &fb, 1024)<=0)break;
-			
+			memset(buffer, 0, 1024);
+
+			if(recvfrom(connfd, buffer, 1024)<=0)return 0;
+			/*if time out, resend packet*/
+			if(timeout)
+			{
+				for(i = 0;i<cwnd;i++)
+				{
+					if(dg[i].seq_num >= send_base)
+					{
+						memset(buffer, 0, 1024);
+						serialize_tcp_packet(buffer, dg[i]);
+						sendto(connfd, buffer, 1024, 0, agentAddress[0]);
+						alarm(TIMEOUT);
+					}
+				}
+				timeout = 0;
+			}
+
+			deserialize_tcp_packet(buffer, &fb);
+			if(fb.flag == 1)
+			{
+				if(fb.seq_num > send_base)
+				{
+					send_base = fb.seq_num;
+					alarm(TIMEOUT);
+				}
+			}
 		}
+		alarm(0);
 		free(dg);
 	}
+	return 1;
+}
 
+int mprecv(int connfd, )
+
+int main(int argc, char *argv[])
+{
+	
+	return 0;
 }
