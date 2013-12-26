@@ -10,9 +10,9 @@
 #include <netdb.h>
 #include <signal.h>
 
-#define INIT_CWND_THRESHOLD 32
+#define INIT_CWND_THRESHOLD 16
 #define TIMEOUT 3
-#define RECV_BUFFER 64
+#define RECV_BUFFER 32
 
 
 struct sockaddr_in myAddress, destAddress;
@@ -106,10 +106,11 @@ void make_header(struct tcp_packet *dg, char *recv_addr, int port, int seq_num, 
 	dg->len = len;
 }
 
-static void time_out(int signo)
+void time_out(int signo)
 {
 	timeout = 1;
 	printf("time out  ");
+	return;
 }
 
 int mpsend(int connfd, int fd, char *recv_address, int port, char *fname)
@@ -129,10 +130,10 @@ int mpsend(int connfd, int fd, char *recv_address, int port, char *fname)
 	struct hostent *he;
 	he = gethostbyname(recv_address);
 
-	struct sigaction *act;
-	act->sa_handler = time_out;
-	act->sa_flags = 0 | SA_INTERRUPT;
-	sigaction(SIGALRM, act, NULL);
+	struct sigaction act;
+	act.sa_handler = time_out;
+	act.sa_flags = 0 | SA_INTERRUPT;
+	sigaction(SIGALRM, &act, NULL);
 
 	srand((unsigned)time(NULL));
 
@@ -145,7 +146,11 @@ int mpsend(int connfd, int fd, char *recv_address, int port, char *fname)
 		memcpy(dg[0].data, fname, strlen(fname)+1);
 		serialize_tcp_packet(buffer, dg[0]);
 
-		sendto(connfd, buffer, 1024, 0, (struct sockaddr*)&agentAddress[rand()%agentNum], sizeof(struct sockaddr));
+		if(sendto(connfd, buffer, 1024, 0, (struct sockaddr*)&agentAddress[rand()%agentNum], sizeof(struct sockaddr)) < 0)
+		{
+			printf("gg\n");
+			return 0;
+		}
 		/*alarm(3);
 		memset(buffer2, 0, 1024);
 
@@ -484,6 +489,7 @@ int main(int argc, char *argv[])
 		scanf("%d", &agentNum);
 		if(agentNum <= 0)return 0;
 		agentAddress = (struct sockaddr_in*)malloc(sizeof(struct sockaddr_in)*agentNum);
+		bzero(agentAddress, sizeof(struct sockaddr_in)*agentNum);
 		for(i=0;i<agentNum;i++)
 		{
 			memset(addr, 0, 128);
@@ -491,6 +497,7 @@ int main(int argc, char *argv[])
 			scanf("%s", addr);
 			printf("agent #%d port: ", i);
 			scanf("%d", &aport);
+			he = gethostbyname(addr);
 			agentAddress[i].sin_family = AF_INET;
 			agentAddress[i].sin_port = htons(aport);
 			agentAddress[i].sin_addr = *(struct in_addr*)((he->h_addr_list)[0]);
@@ -501,7 +508,7 @@ int main(int argc, char *argv[])
 	else if(strcmp(argv[1], "r") == 0)
 	{
 		fd = open("recvfile", O_WRONLY, O_CREAT, O_TRUNC, 0666);
-		connfd = mpsocket(5124);
+		connfd = mpsocket(atoi(argv[2]));
 		if(mprecv(connfd, fd) != fd)unlink("recvfile");
 	}
 	close(connfd);

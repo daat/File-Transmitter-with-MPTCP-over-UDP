@@ -20,6 +20,8 @@ int main(int argc, char *argv[])
 
 	connfd = socket(AF_INET, SOCK_DGRAM, 0);
 	bzero(&myAddress, sizeof(myAddress));
+	bzero(&sAddress, sizeof(sAddress));
+
 	myAddress.sin_family = AF_INET;
 	myAddress.sin_port = htons(atoi(argv[1]));
 	myAddress.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -27,7 +29,6 @@ int main(int argc, char *argv[])
 
 	memset(buffer, 0, 1024);
 
-	tAddress.sin_family = AF_INET;
 
 	srand((unsigned)time(NULL));
 
@@ -57,6 +58,8 @@ int main(int argc, char *argv[])
 			printf("fwd ACK #%d\n", seq_num/1000);
 		}
 
+		bzero(&tAddress, sizeof(tAddress));
+		tAddress.sin_family = AF_INET;
 		tAddress.sin_port = htons(port);
 		tAddress.sin_addr = *(struct in_addr*)addr;
 		memcpy(buffer, &(sAddress.sin_addr.s_addr), 4);
@@ -67,6 +70,7 @@ int main(int argc, char *argv[])
 		buffer[7] = port;
 		sendto(connfd, buffer, 1024, 0, (struct sockaddr *)&tAddress, sizeof(struct sockaddr));
 		memset(buffer, 0, 1024);
+		bzero(&sAddress, sizeof(sAddress));
 	}
 
 	return 0;
